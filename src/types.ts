@@ -56,10 +56,14 @@ export interface N8nConfig {
 
 export interface FirebaseConfig {
   projectId: string;
+  apiKey?: string;
+  authDomain?: string;
+  storageBucket?: string;
+  messagingSenderId?: string;
+  appId?: string;
   clientEmail?: string;
   privateKey?: string;
   isConfigured: boolean;
-  storageBucket?: string;
 }
 
 export interface WebhookLog {
@@ -74,6 +78,24 @@ export interface WebhookLog {
   payload: any;
   response?: any;
   durationMs?: number;
+}
+
+export interface UserSession {
+  name: string;
+  phone: string;
+  status: 'open' | 'close';
+  instanceName?: string;
+  connectedAt?: number;
+}
+
+export interface InstanceCheckResponse {
+  status: 'open' | 'close';
+  qrcode?: string | null;
+  code?: string | null;
+  instanceName?: string;
+  phone?: string;
+  name?: string;
+  error?: string;
 }
 
 export interface AppConfig {

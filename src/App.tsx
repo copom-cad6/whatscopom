@@ -7,11 +7,23 @@ import { EmptyChatState } from './components/EmptyChatState';
 import { NewChatModal } from './components/NewChatModal';
 import { SimulateMessageModal } from './components/SimulateMessageModal';
 import { IntegrationsModal } from './components/IntegrationsModal';
-import { AppConfig, Chat, Message, WebhookLog } from './types';
+import { LoginScreen } from './components/LoginScreen';
+import { AppConfig, Chat, Message, WebhookLog, UserSession } from './types';
+import { saveChatToFirestore, saveMessageToFirestore } from './firebase';
 
 export default function App() {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [socketConnected, setSocketConnected] = useState(false);
+
+  // Authenticated user session state (saved in localStorage)
+  const [currentUser, setCurrentUser] = useState<UserSession | null>(() => {
+    try {
+      const saved = localStorage.getItem('zapchat_user_session');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
 
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -49,6 +61,9 @@ export default function App() {
 
     // New message event
     newSocket.on('message:new', (msg: Message) => {
+      // Sync to Firebase Firestore
+      saveMessageToFirestore(msg);
+
       setMessages((prev) => {
         if (msg.chatId === activeChatId) {
           // Prevent duplicates
@@ -62,7 +77,7 @@ export default function App() {
       setChats((prevChats) => {
         return prevChats.map((c) => {
           if (c.id === msg.chatId) {
-            return {
+            const updated: Chat = {
               ...c,
               lastMessage: {
                 text: msg.text || (msg.mediaType ? `[${msg.mediaType}]` : ''),
@@ -73,6 +88,8 @@ export default function App() {
               updatedAt: msg.timestamp,
               unreadCount: msg.fromMe || c.id === activeChatId ? 0 : (c.unreadCount || 0) + 1
             };
+            saveChatToFirestore(updated);
+            return updated;
           }
           return c;
         }).sort((a, b) => b.updatedAt - a.updatedAt);
@@ -91,10 +108,12 @@ export default function App() {
       setMessages((prev) =>
         prev.map((m) => (m.id === updated.id ? updated : m))
       );
+      saveMessageToFirestore(updated);
     });
 
     // Chat updated
     newSocket.on('chat:updated', (updatedChat: Chat) => {
+      saveChatToFirestore(updatedChat);
       setChats((prev) => {
         const index = prev.findIndex((c) => c.id === updatedChat.id);
         if (index >= 0) {
@@ -123,12 +142,49 @@ export default function App() {
       setConfig(cfg);
     });
 
+    // Instance status changed via webhook or backend
+    newSocket.on('instance:status', (data: { phone: string; status: 'open' | 'close' }) => {
+      if (currentUser && data.phone === currentUser.phone) {
+        if (data.status === 'close') {
+          setCurrentUser((prev) => (prev ? { ...prev, status: 'close' } : null));
+        } else if (data.status === 'open') {
+          setCurrentUser((prev) => (prev ? { ...prev, status: 'open' } : null));
+        }
+      }
+    });
+
     setSocket(newSocket);
 
     return () => {
       newSocket.disconnect();
     };
-  }, [activeChatId]);
+  }, [activeChatId, currentUser]);
+
+  // Auth Handlers
+  const handleLoginSuccess = (session: UserSession) => {
+    setCurrentUser(session);
+    try {
+      localStorage.setItem('zapchat_user_session', JSON.stringify(session));
+    } catch {}
+  };
+
+  const handleLogout = async () => {
+    if (currentUser?.phone) {
+      try {
+        await fetch('/api/auth/disconnect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: currentUser.phone })
+        });
+      } catch (err) {
+        console.error('Erro ao desconectar:', err);
+      }
+    }
+    setCurrentUser(null);
+    try {
+      localStorage.removeItem('zapchat_user_session');
+    } catch {}
+  };
 
   // Fetch chats on initial mount as fallback
   useEffect(() => {
@@ -226,6 +282,7 @@ export default function App() {
         body: JSON.stringify({ phone, name })
       });
       const newChat: Chat = await res.json();
+      saveChatToFirestore(newChat);
       setChats((prev) => [newChat, ...prev.filter((c) => c.id !== newChat.id)]);
       selectChat(newChat);
 
@@ -278,6 +335,29 @@ export default function App() {
 
   const activeChat = chats.find((c) => c.id === activeChatId) || null;
 
+  // If user is not authenticated or instance is closed, show initial Login / QR Code screen
+  if (!currentUser || currentUser.status !== 'open') {
+    return (
+      <>
+        <LoginScreen
+          onLoginSuccess={handleLoginSuccess}
+          socket={socket}
+          onOpenIntegrations={() => setIsIntegrationsOpen(true)}
+        />
+        <IntegrationsModal
+          isOpen={isIntegrationsOpen}
+          onClose={() => setIsIntegrationsOpen(false)}
+          config={config}
+          logs={logs}
+          onUpdateConfig={handleUpdateConfig}
+          onTestEvolution={handleTestEvolution}
+          onTestN8n={handleTestN8n}
+          onClearLogs={handleClearLogs}
+        />
+      </>
+    );
+  }
+
   return (
     <div id="zapchat-app-root" className="flex h-screen w-screen bg-[#0b141a] font-sans text-[#e9edef] overflow-hidden">
       {/* Sidebar (List of chats) */}
@@ -289,6 +369,8 @@ export default function App() {
         <SidebarHeader
           config={config}
           socketConnected={socketConnected}
+          currentUser={currentUser}
+          onLogout={handleLogout}
           onNewChat={() => setIsNewChatOpen(true)}
           onSimulate={() => setIsSimulateOpen(true)}
           onOpenIntegrations={() => setIsIntegrationsOpen(true)}

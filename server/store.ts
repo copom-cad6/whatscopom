@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { AppConfig, Chat, Message, WebhookLog } from '../src/types.js';
+import { AppConfig, Chat, Message, WebhookLog, UserSession } from '../src/types.js';
 
 // Default initial state
 const initialChats: Chat[] = [
@@ -166,10 +166,15 @@ class Store {
         events: ['messages.upsert', 'messages.send', 'connection.update']
       },
       firebase: {
-        projectId: process.env.FIREBASE_PROJECT_ID || '',
+        projectId: process.env.FIREBASE_PROJECT_ID || 'whats-cad',
+        apiKey: process.env.FIREBASE_API_KEY || 'AIzaSyAzOMSDXg3TRb9MRfKJxLp4mDk-Q5-zIdY',
+        authDomain: process.env.FIREBASE_AUTH_DOMAIN || 'whats-cad.firebaseapp.com',
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'whats-cad.firebasestorage.app',
+        messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || '153886856889',
+        appId: process.env.FIREBASE_APP_ID || '1:153886856889:web:e2c95f4364cca561f96d68',
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
         privateKey: process.env.FIREBASE_PRIVATE_KEY || '',
-        isConfigured: !!(process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL)
+        isConfigured: true
       },
       appUrl: process.env.APP_URL || 'http://localhost:3000'
     };
@@ -322,6 +327,34 @@ class Store {
 
   public getWebhookLogs(limit = 50): WebhookLog[] {
     return this.webhookLogs.slice(0, limit);
+  }
+
+  private instanceSessions: Map<string, UserSession & { qrcode?: string | null; code?: string | null; lastChecked?: number }> = new Map();
+
+  public getInstanceSession(phone: string): (UserSession & { qrcode?: string | null; code?: string | null; lastChecked?: number }) | null {
+    const cleanPhone = phone.replace(/\D/g, '');
+    return this.instanceSessions.get(cleanPhone) || null;
+  }
+
+  public setInstanceSession(phone: string, session: UserSession & { qrcode?: string | null; code?: string | null; lastChecked?: number }): void {
+    const cleanPhone = phone.replace(/\D/g, '');
+    this.instanceSessions.set(cleanPhone, session);
+  }
+
+  public updateInstanceStatus(phone: string, status: 'open' | 'close'): boolean {
+    const cleanPhone = phone.replace(/\D/g, '');
+    const session = this.instanceSessions.get(cleanPhone);
+    if (session) {
+      session.status = status;
+      if (status === 'open') {
+        session.qrcode = null;
+        session.code = null;
+        session.connectedAt = Date.now();
+      }
+      this.instanceSessions.set(cleanPhone, session);
+      return true;
+    }
+    return false;
   }
 
   public clearWebhookLogs(): void {

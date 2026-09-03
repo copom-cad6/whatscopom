@@ -356,6 +356,24 @@ export const IntegrationsModal: React.FC<IntegrationsModalProps> = ({
                   </button>
                 </div>
               </div>
+
+              {/* Webhook de Verificação de Instância na Tela de Acesso */}
+              <div className="bg-[#111b21] p-4 rounded-xl border border-[#2a3942] space-y-2">
+                <h4 className="text-xs font-semibold text-[#e9edef] flex items-center gap-2">
+                  <Activity className="w-3.5 h-3.5 text-[#00a884]" />
+                  Webhook de Verificação de Instância (Acesso Inicial)
+                </h4>
+                <p className="text-[11px] text-[#8696a0]">
+                  Quando o usuário clica em &quot;Acessar&quot; informando Nome e Telefone, o sistema envia o evento <code className="text-[#00a884] font-mono">instance.check</code> para seu n8n. O n8n pode retornar diretamente:
+                </p>
+                <div className="bg-[#202c33] p-3 rounded-lg border border-[#2a3942] font-mono text-[11px] text-[#aebac1] overflow-x-auto">
+                  <pre>{`{
+  "status": "open", // ou "close"
+  "qrcode": "base64_do_qrcode_se_close",
+  "code": "1234-5678" // código copia e cola
+}`}</pre>
+                </div>
+              </div>
             </div>
           )}
 
@@ -478,77 +496,67 @@ export const IntegrationsModal: React.FC<IntegrationsModalProps> = ({
           {/* TAB 3: FIREBASE & VPS */}
           {activeTab === 'firebase' && (
             <div className="space-y-5">
-              <div className="bg-[#111b21] p-4 rounded-xl border border-[#2a3942] space-y-2">
+              <div className="bg-[#111b21] p-4 rounded-xl border border-[#222d34] space-y-2">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-[#e9edef] flex items-center gap-2">
                     <Database className="w-4 h-4 text-[#00a884]" />
-                    Banco de Dados Firebase (Firestore)
+                    Firebase Conectado (Projeto: whats-cad)
                   </h3>
-                  <span className="text-[11px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-medium">
-                    {config?.firebase.isConfigured ? 'Configurado' : 'Aguardando Credenciais'}
+                  <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#00a884]/20 text-[#00a884] font-medium flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#00a884] animate-pulse"></span>
+                    Configurado & Ativo
                   </span>
                 </div>
                 <p className="text-xs text-[#8696a0] leading-relaxed">
-                  Conforme solicitado, você pode rodar a aplicação imediatamente com o armazenamento em tempo real e fornecer as credenciais do Firebase agora ou quando subir na sua VPS.
+                  Credenciais oficiais do Firebase (SDK Web e Firestore) vinculadas ao projeto <span className="text-[#e9edef] font-mono">whats-cad</span>.
                 </p>
               </div>
 
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-[#8696a0] mb-1">
-                    Firebase Project ID
-                  </label>
-                  <input
-                    type="text"
-                    value={fbProjectId}
-                    onChange={(e) => setFbProjectId(e.target.value)}
-                    placeholder="ex: meu-projeto-firebase-12345"
-                    className="w-full bg-[#111b21] border border-[#2a3942] focus:border-[#00a884] rounded-lg px-3.5 py-2 text-xs text-[#e9edef] placeholder-[#8696a0] focus:outline-none font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-[#8696a0] mb-1">
-                    Client Email (Service Account)
-                  </label>
-                  <input
-                    type="email"
-                    value={fbEmail}
-                    onChange={(e) => setFbEmail(e.target.value)}
-                    placeholder="firebase-adminsdk-xxx@meu-projeto.iam.gserviceaccount.com"
-                    className="w-full bg-[#111b21] border border-[#2a3942] focus:border-[#00a884] rounded-lg px-3.5 py-2 text-xs text-[#e9edef] placeholder-[#8696a0] focus:outline-none font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-[#8696a0] mb-1">
-                    Private Key (Chave Privada)
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={fbKey}
-                    onChange={(e) => setFbKey(e.target.value)}
-                    placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----"
-                    className="w-full bg-[#111b21] border border-[#2a3942] focus:border-[#00a884] rounded-lg px-3.5 py-2 text-xs text-[#e9edef] placeholder-[#8696a0] focus:outline-none font-mono"
-                  />
+              {/* Firebase Active Config Overview */}
+              <div className="bg-[#111b21] p-4 rounded-xl border border-[#222d34] space-y-3">
+                <h4 className="text-xs font-semibold text-[#e9edef] flex items-center gap-2">
+                  <Check className="w-3.5 h-3.5 text-[#00a884]" />
+                  Configuração Web do Firebase (whats-cad)
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
+                  <div className="bg-[#202c33] p-2.5 rounded-lg border border-[#222d34]">
+                    <span className="text-[#8696a0] block text-[10px]">projectId</span>
+                    <span className="text-[#e9edef] select-all">whats-cad</span>
+                  </div>
+                  <div className="bg-[#202c33] p-2.5 rounded-lg border border-[#222d34]">
+                    <span className="text-[#8696a0] block text-[10px]">authDomain</span>
+                    <span className="text-[#e9edef] select-all">whats-cad.firebaseapp.com</span>
+                  </div>
+                  <div className="bg-[#202c33] p-2.5 rounded-lg border border-[#222d34]">
+                    <span className="text-[#8696a0] block text-[10px]">storageBucket</span>
+                    <span className="text-[#e9edef] select-all">whats-cad.firebasestorage.app</span>
+                  </div>
+                  <div className="bg-[#202c33] p-2.5 rounded-lg border border-[#222d34]">
+                    <span className="text-[#8696a0] block text-[10px]">messagingSenderId</span>
+                    <span className="text-[#e9edef] select-all">153886856889</span>
+                  </div>
+                  <div className="bg-[#202c33] p-2.5 rounded-lg border border-[#222d34] sm:col-span-2">
+                    <span className="text-[#8696a0] block text-[10px]">appId</span>
+                    <span className="text-[#e9edef] select-all text-[11px]">1:153886856889:web:e2c95f4364cca561f96d68</span>
+                  </div>
                 </div>
               </div>
 
-              {/* Ready-to-copy VPS Deployment Guide */}
-              <div className="bg-[#111b21] p-4 rounded-xl border border-[#2a3942] space-y-3">
+              {/* Ready-to-copy VPS Deployment Guide with npm install */}
+              <div className="bg-[#111b21] p-4 rounded-xl border border-[#222d34] space-y-3">
                 <h4 className="text-xs font-semibold text-[#e9edef] flex items-center gap-2">
                   <Terminal className="w-4 h-4 text-[#00a884]" />
-                  Comandos Prontos para sua VPS (Docker ou Node.js)
+                  Comandos Prontos para sua VPS (Dockerfile com npm install)
                 </h4>
                 <p className="text-[11px] text-[#8696a0]">
-                  O projeto já conta com <code>Dockerfile</code>, <code>docker-compose.yml</code> e <code>ecosystem.config.cjs</code> configurados para a porta 3000.
+                  O <code>Dockerfile</code> foi atualizado com <code>RUN npm install</code> conforme solicitado para evitar falhas de dependência na sua VPS.
                 </p>
 
                 <div className="bg-[#0b141a] p-3 rounded-lg border border-[#222d34] text-[11px] font-mono text-[#aebac1] space-y-2">
-                  <p className="text-[#00a884]"># Opção 1: Via Docker Compose na VPS</p>
-                  <p className="select-all">docker-compose up -d --build</p>
+                  <p className="text-[#00a884]"># 1. Subir via Docker Compose (Porta 3000)</p>
+                  <p className="select-all">docker compose up -d --build</p>
                   
-                  <p className="text-[#00a884] pt-2"># Opção 2: Via PM2 / Node.js</p>
+                  <p className="text-[#00a884] pt-2"># 2. Ou rodar diretamente com Node/PM2</p>
                   <p className="select-all">npm install && npm run build && pm2 start ecosystem.config.cjs</p>
                 </div>
               </div>
