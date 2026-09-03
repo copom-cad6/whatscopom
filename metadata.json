@@ -1,0 +1,6 @@
+{
+  "name": "ZapChat Evolution",
+  "description": "Aplicativo web de chat estilo WhatsApp com integração Evolution API, webhooks para n8n, Socket.io em tempo real e suporte a Firebase.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
