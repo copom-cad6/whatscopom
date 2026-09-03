@@ -148,7 +148,7 @@ class Store {
       this.messages.set(chatId, msgs);
     });
 
-    // Default configuration from environment variables
+    // Default configuration with credentials directly in code
     this.config = {
       evolution: {
         apiUrl: process.env.EVOLUTION_API_URL || 'https://evolution.seudominio.com',
@@ -158,7 +158,7 @@ class Store {
         state: 'close'
       },
       n8n: {
-        webhookUrl: process.env.N8N_WEBHOOK_URL || 'https://n8n.seudominio.com/webhook/whatsapp-evolution',
+        webhookUrl: process.env.N8N_WEBHOOK_URL || 'https://webhook.ehstech.com.br/webhook/login_wcad',
         webhookSecret: process.env.N8N_WEBHOOK_SECRET || '',
         enabled: true,
         forwardIncoming: true,
@@ -166,12 +166,12 @@ class Store {
         events: ['messages.upsert', 'messages.send', 'connection.update']
       },
       firebase: {
-        projectId: process.env.FIREBASE_PROJECT_ID || 'whats-cad',
-        apiKey: process.env.FIREBASE_API_KEY || 'AIzaSyAzOMSDXg3TRb9MRfKJxLp4mDk-Q5-zIdY',
-        authDomain: process.env.FIREBASE_AUTH_DOMAIN || 'whats-cad.firebaseapp.com',
-        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'whats-cad.firebasestorage.app',
-        messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || '153886856889',
-        appId: process.env.FIREBASE_APP_ID || '1:153886856889:web:e2c95f4364cca561f96d68',
+        projectId: 'whats-cad',
+        apiKey: 'AIzaSyAzOMSDXg3TRb9MRfKJxLp4mDk-Q5-zIdY',
+        authDomain: 'whats-cad.firebaseapp.com',
+        storageBucket: 'whats-cad.firebasestorage.app',
+        messagingSenderId: '153886856889',
+        appId: '1:153886856889:web:e2c95f4364cca561f96d68',
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
         privateKey: process.env.FIREBASE_PRIVATE_KEY || '',
         isConfigured: true
@@ -341,20 +341,33 @@ class Store {
     this.instanceSessions.set(cleanPhone, session);
   }
 
-  public updateInstanceStatus(phone: string, status: 'open' | 'close'): boolean {
+  public updateInstanceStatus(phone: string, status: 'open' | 'close', qrcode?: string | null, code?: string | null): boolean {
     const cleanPhone = phone.replace(/\D/g, '');
-    const session = this.instanceSessions.get(cleanPhone);
-    if (session) {
+    let session = this.instanceSessions.get(cleanPhone);
+    if (!session) {
+      session = {
+        name: `WhatsApp ${cleanPhone.slice(-4)}`,
+        phone: cleanPhone,
+        status,
+        instanceName: `inst_${cleanPhone}`,
+        qrcode: qrcode || null,
+        code: code || null,
+        lastChecked: Date.now(),
+        connectedAt: status === 'open' ? Date.now() : undefined
+      };
+    } else {
       session.status = status;
       if (status === 'open') {
         session.qrcode = null;
         session.code = null;
         session.connectedAt = Date.now();
+      } else {
+        if (qrcode !== undefined) session.qrcode = qrcode;
+        if (code !== undefined) session.code = code;
       }
-      this.instanceSessions.set(cleanPhone, session);
-      return true;
     }
-    return false;
+    this.instanceSessions.set(cleanPhone, session);
+    return true;
   }
 
   public clearWebhookLogs(): void {

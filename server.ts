@@ -122,6 +122,9 @@ async function startServer() {
     });
   });
 
+  // Default Login Webhook URL directly in code
+  const LOGIN_WEBHOOK_URL = 'https://webhook.ehstech.com.br/webhook/login_wcad';
+
   // --- Instance Check & Authentication (Webhook Trigger) ---
   app.post('/api/auth/check-instance', async (req, res) => {
     const { name, phone } = req.body;
@@ -149,94 +152,155 @@ async function startServer() {
       });
     }
 
-    // 2. Trigger webhook to n8n if configured
-    let n8nResponse: any = null;
-    if (config.n8n.enabled && config.n8n.webhookUrl) {
-      const startTime = Date.now();
-      const n8nPayload = {
-        event: 'instance.check',
-        name,
-        phone: formattedPhone,
-        rawPhone: phone,
-        instanceName,
-        timestamp: new Date().toISOString()
-      };
+    // 2. Send POST directly to https://webhook.ehstech.com.br/webhook/login_wcad
+    const targetWebhookUrl = config.n8n?.webhookUrl || LOGIN_WEBHOOK_URL;
+    let webhookResult: any = null;
+    let webhookStatus: 'open' | 'close' | null = null;
+    let webhookQrCode: string | null = null;
+    let webhookCode: string | null = null;
 
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 6000);
+    const startTime = Date.now();
+    const webhookPayload = {
+      name: name.trim(),
+      phone: formattedPhone,
+      rawPhone: phone,
+      instanceName,
+      timestamp: new Date().toISOString()
+    };
 
-        const response = await fetch(config.n8n.webhookUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(config.n8n.webhookSecret ? { 'Authorization': `Bearer ${config.n8n.webhookSecret}` } : {})
-          },
-          body: JSON.stringify(n8nPayload),
-          signal: controller.signal
-        });
-        clearTimeout(timeout);
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
 
-        if (response.ok) {
-          const json = await response.json();
-          if (json && (json.status === 'open' || json.status === 'close')) {
-            n8nResponse = json;
-          }
+      const response = await fetch(targetWebhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(config.n8n?.webhookSecret ? { 'Authorization': `Bearer ${config.n8n.webhookSecret}` } : {})
+        },
+        body: JSON.stringify(webhookPayload),
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+
+      if (response.ok) {
+        const text = await response.text();
+        let json: any = null;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          json = { raw: text };
+        }
+        webhookResult = json;
+
+        // Parse n8n response format (supports standard and prefixed --status, --qrcode, --code)
+        let target = json;
+        if (Array.isArray(json) && json.length > 0) target = json[0];
+        else if (json && json.data) target = json.data;
+
+        const rawStatus = (target?.status || target?.['--status'] || target?.state || '').toString().toLowerCase();
+        if (rawStatus.includes('open') || rawStatus.includes('conectado') || rawStatus === 'connected') {
+          webhookStatus = 'open';
+        } else if (rawStatus.includes('close') || rawStatus.includes('desconectado') || rawStatus === 'disconnected') {
+          webhookStatus = 'close';
         }
 
-        store.addWebhookLog({
-          direction: 'outgoing',
-          source: 'n8n',
-          event: 'instance.check',
-          url: config.n8n.webhookUrl,
-          statusCode: response.status,
-          success: response.ok,
-          payload: n8nPayload,
-          response: n8nResponse || { received: response.statusText },
-          durationMs: Date.now() - startTime
-        });
-        io.emit('webhook:new_log', store.getWebhookLogs(1)[0]);
-      } catch (err: any) {
-        store.addWebhookLog({
-          direction: 'outgoing',
-          source: 'n8n',
-          event: 'instance.check',
-          url: config.n8n.webhookUrl,
-          statusCode: 0,
-          success: false,
-          payload: n8nPayload,
-          response: { error: err?.message || 'Falha na resposta do webhook n8n' },
-          durationMs: Date.now() - startTime
-        });
-        io.emit('webhook:new_log', store.getWebhookLogs(1)[0]);
+        webhookQrCode = target?.qrcode || target?.['--qrcode'] || target?.qr || target?.base64 || null;
+        webhookCode = target?.code || target?.['--code'] || target?.pairingCode || null;
       }
+
+      store.addWebhookLog({
+        direction: 'outgoing',
+        source: 'n8n',
+        event: 'instance.check',
+        url: targetWebhookUrl,
+        statusCode: response.status,
+        success: response.ok,
+        payload: webhookPayload,
+        response: webhookResult || { received: response.statusText },
+        durationMs: Date.now() - startTime
+      });
+      io.emit('webhook:new_log', store.getWebhookLogs(1)[0]);
+    } catch (err: any) {
+      store.addWebhookLog({
+        direction: 'outgoing',
+        source: 'n8n',
+        event: 'instance.check',
+        url: targetWebhookUrl,
+        statusCode: 0,
+        success: false,
+        payload: webhookPayload,
+        response: { error: err?.message || 'Falha na resposta do webhook' },
+        durationMs: Date.now() - startTime
+      });
+      io.emit('webhook:new_log', store.getWebhookLogs(1)[0]);
     }
 
-    // If n8n explicitly responded with status, follow its decision
-    if (n8nResponse && (n8nResponse.status === 'open' || n8nResponse.status === 'close')) {
-      const status = n8nResponse.status;
+    // If webhook returned status 'open'
+    if (webhookStatus === 'open') {
       store.setInstanceSession(formattedPhone, {
         name,
         phone: formattedPhone,
-        status,
+        status: 'open',
         instanceName,
-        qrcode: n8nResponse.qrcode || null,
-        code: n8nResponse.code || null,
+        qrcode: null,
+        code: null,
         lastChecked: Date.now(),
-        connectedAt: status === 'open' ? Date.now() : undefined
+        connectedAt: Date.now()
       });
 
       return res.json({
-        status,
-        qrcode: n8nResponse.qrcode || null,
-        code: n8nResponse.code || null,
+        status: 'open',
+        qrcode: null,
+        code: null,
         name,
         phone: formattedPhone,
         instanceName
       });
     }
 
-    // 3. Check Evolution API if configured
+    // If webhook returned status 'close'
+    if (webhookStatus === 'close') {
+      let finalQr = webhookQrCode;
+      let finalCode = webhookCode;
+
+      if (!finalQr) {
+        const p1 = Math.floor(1000 + Math.random() * 9000);
+        const p2 = Math.floor(1000 + Math.random() * 9000);
+        if (!finalCode) finalCode = `${p1}-${p2}`;
+        const qrPayload = `2@${Buffer.from(`zapchat_${formattedPhone}_${Date.now()}`).toString('base64')},${Buffer.from(finalCode).toString('base64')}`;
+        try {
+          finalQr = await QRCode.toDataURL(qrPayload, {
+            width: 320,
+            margin: 2,
+            color: { dark: '#111b21', light: '#ffffff' }
+          });
+        } catch {
+          finalQr = null;
+        }
+      }
+
+      store.setInstanceSession(formattedPhone, {
+        name,
+        phone: formattedPhone,
+        status: 'close',
+        instanceName,
+        qrcode: finalQr,
+        code: finalCode,
+        lastChecked: Date.now()
+      });
+
+      return res.json({
+        status: 'close',
+        qrcode: finalQr,
+        code: finalCode,
+        name,
+        phone: formattedPhone,
+        instanceName
+      });
+    }
+
+    // 3. Check Evolution API if configured as secondary check
     let evolutionOpen = false;
     if (config.evolution.apiUrl && config.evolution.apiKey) {
       try {
@@ -269,12 +333,11 @@ async function startServer() {
       });
     }
 
-    // 4. Instance is not connected: Return "close" with valid QRCode base64 & pairing code
+    // 4. Default fallback: Instance is not connected, generate QR & Code
     const pairingPart1 = Math.floor(1000 + Math.random() * 9000);
     const pairingPart2 = Math.floor(1000 + Math.random() * 9000);
     const pairingCode = `${pairingPart1}-${pairingPart2}`;
     
-    // Generate valid WhatsApp web handshake string for QR
     const qrPayload = `2@${Buffer.from(`zapchat_${formattedPhone}_${Date.now()}`).toString('base64')},${Buffer.from(pairingCode).toString('base64')}`;
     let qrBase64 = '';
     try {
@@ -299,19 +362,6 @@ async function startServer() {
       code: pairingCode,
       lastChecked: Date.now()
     });
-
-    // Also register in webhook logs as instance verification event
-    store.addWebhookLog({
-      direction: 'outgoing',
-      source: 'system',
-      event: 'instance.check',
-      statusCode: 200,
-      success: true,
-      payload: { name, phone: formattedPhone, instanceName },
-      response: { status: 'close', qrcode: '(base64 gerado)', code: pairingCode },
-      durationMs: 25
-    });
-    io.emit('webhook:new_log', store.getWebhookLogs(1)[0]);
 
     return res.json({
       status: 'close',
@@ -626,6 +676,43 @@ async function startServer() {
       chatId: chat.id,
       timestamp: message.timestamp
     });
+  });
+
+  // --- Webhook: Incoming Instance Status (from n8n or external workflow) ---
+  app.post(['/api/webhook/instance-status', '/api/webhook/n8n/status'], (req, res) => {
+    const { phone, number, status, qrcode, code } = req.body;
+    const targetPhone = (phone || number || '').toString().replace(/\D/g, '');
+    const formattedPhone = targetPhone.length >= 10 && !targetPhone.startsWith('55') ? `55${targetPhone}` : targetPhone;
+
+    if (!formattedPhone) {
+      return res.status(400).json({ error: 'Telefone é obrigatório' });
+    }
+
+    const normStatus = (status || req.body['--status'] || 'close').toString().toLowerCase().includes('open') ? 'open' : 'close';
+    const qr = qrcode || req.body['--qrcode'] || req.body.qr || null;
+    const pairCode = code || req.body['--code'] || null;
+
+    store.updateInstanceStatus(formattedPhone, normStatus, qr, pairCode);
+    io.emit('instance:status', {
+      phone: formattedPhone,
+      status: normStatus,
+      qrcode: qr,
+      code: pairCode
+    });
+
+    store.addWebhookLog({
+      direction: 'incoming',
+      source: 'n8n',
+      event: 'instance.status_callback',
+      statusCode: 200,
+      success: true,
+      payload: req.body,
+      response: { received: true, status: normStatus, phone: formattedPhone },
+      durationMs: 0
+    });
+    io.emit('webhook:new_log', store.getWebhookLogs(1)[0]);
+
+    res.json({ success: true, status: normStatus, phone: formattedPhone });
   });
 
   // --- Simulation helper endpoint ---
